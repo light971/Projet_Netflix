@@ -1,0 +1,310 @@
+-- Netflix Project
+
+DROP TABLE netflix;
+CREATE TABLE netflix (
+    show_id VARCHAR(6) PRIMARY KEY,	
+    type VARCHAR(10),	
+    title VARCHAR(150),	
+    director VARCHAR(200),	
+    cast VARCHAR(100),
+    country VARCHAR(150),	
+    date_added VARCHAR(50),	
+    release_year INT,	
+    rating	 VARCHAR(10),
+    duration VARCHAR(15),	
+    listed_in VARCHAR(100),	
+    description VARCHAR(250)
+);
+
+SELECT * FROM netflix;
+
+
+SELECT COUNT(*) as total_content
+FROM netflix;
+
+SELECT DISTINCT type 
+FROM netflix;
+
+-- 15 Business Problems
+
+-- 1. Count the Number of Movies vs TV Shows
+
+SELECT * FROM netflix;
+
+SELECT type, COUNT(*) AS Total_movies
+FROM netflix
+GROUP BY 1;
+
+
+-- 2. Find the Most Common Rating for Movies and TV Shows
+SELECT * FROM netflix;
+
+SELECT type, rating
+FROM
+(
+SELECT type, rating, COUNT(*),
+RANK() OVER(PARTITION BY type ORDER BY COUNT(*) DESC) as ranking
+FROM netflix
+GROUP BY 1, 2
+) AS t1
+WHERE
+ranking = 1;
+
+
+-- 3. List All Movies Released in a Specific Year (e.g., 2020)
+SELECT * FROM netflix;
+
+SELECT * FROM netflix
+WHERE type = 'Movie' AND release_year = '2020';
+
+
+-- 4. Find the Top 5 Countries with the Most Content on Netflix
+SELECT * FROM netflix;
+
+WITH RECURSIVE
+  SplitCountry(title, rest) AS (
+    -- Initialiser la récursion en ajoutant une virgule à la fin pour traiter le dernier élément
+    SELECT
+      title,
+      country || ','
+    FROM
+      netflix
+    UNION ALL
+    -- Étape récursive : diviser la chaîne
+    SELECT
+      title,
+      SUBSTR(rest, INSTR(rest, ',') + 1)  -- Reste de la chaîne
+    FROM
+      SplitCountry
+    WHERE
+      INSTR(rest, ',') > 0 -- Continuer tant qu'il y a des virgules à traiter
+  ),
+  UnnestedCountries AS (
+    -- Extraire chaque pays de la colonne 'rest' qui a été réduite à une seule valeur
+    SELECT
+      TRIM(SUBSTR(rest, 1, INSTR(rest, ',') - 1)) AS country_name
+    FROM
+      SplitCountry
+    WHERE
+      INSTR(rest, ',') > 0 -- Sélectionner uniquement les parties valides avant le délimiteur
+  )
+-- Requête Finale (Simule le GROUP BY et le TOP 5 de votre requête originale)
+SELECT
+  country_name,
+  COUNT(*) AS total_content
+FROM
+  UnnestedCountries
+WHERE
+  country_name IS NOT NULL AND country_name != '' -- Filtrer les valeurs NULL ou vides
+GROUP BY
+  country_name
+ORDER BY
+  total_content DESC
+  LIMIT 5;
+
+
+-- 5. Identify the Longest Movie
+SELECT * FROM netflix;
+
+SELECT type, duration FROM netflix
+WHERE type = 'Movie' 
+        AND 
+        duration = (SELECT MAX(duration) FROM netflix)
+GROUP BY 1;
+    
+
+-- 6. Find Content Added in the Last 5 Years
+SELECT * FROM netflix;
+
+SELECT *
+FROM netflix
+WHERE date_added >= DATE('now', '-5 year');
+
+
+-- 7. Find All Movies/TV Shows by Director 'Rajiv Chilaka'
+SELECT * FROM netflix;
+
+SELECT * FROM netflix
+WHERE director LIKE '%Rajiv Chilaka%';
+
+
+-- 8. List All TV Shows with More Than 5 Seasons
+SELECT * FROM netflix;
+
+SELECT
+  *
+FROM
+  netflix
+WHERE
+  type = 'TV Show'
+  -- Extrait le nombre de saisons de la chaîne (ex: '7 Seasons')
+  AND CAST(
+      SUBSTR(
+          duration,
+          1,
+          INSTR(duration, ' ') - 1
+      )
+      AS INTEGER
+  ) > 5;
+
+
+-- 9. Count the Number of Content Items in Each Genre
+WITH RECURSIVE
+  SplitGenres(ID, rest) AS (
+    -- Étape 1 : Initialisation
+    SELECT
+      show_id, -- Utilisez un identifiant unique de la table
+      listed_in || ',' -- Ajouter un délimiteur final pour simplifier le traitement du dernier élément
+    FROM
+      netflix
+    UNION ALL
+    -- Étape 2 : Récursion
+    SELECT
+      ID,
+      SUBSTR(rest, INSTR(rest, ',') + 1)  -- Reste de la chaîne après le délimiteur
+    FROM
+      SplitGenres
+    WHERE
+      INSTR(rest, ',') > 0 -- Condition d'arrêt : continuer tant qu'il y a des virgules
+  ),
+  UnnestedGenres AS (
+    -- Étape 3 : Extraction des éléments individuels
+    SELECT
+      TRIM(
+        SUBSTR(rest, 1, INSTR(rest, ',') - 1)
+      ) AS genre_name
+    FROM
+      SplitGenres
+    WHERE
+      INSTR(rest, ',') > 0 -- Ne pas inclure les lignes vides
+  )
+-- Étape 4 : Agrégation (équivalent au GROUP BY de la requête originale)
+SELECT
+  genre_name AS genre,
+  COUNT(*) AS total_content
+FROM
+  UnnestedGenres
+WHERE
+  genre_name IS NOT NULL AND genre_name != '' -- Nettoyage final
+GROUP BY
+  genre_name
+ORDER BY
+  total_content DESC;
+  
+
+-- 10.Find each year and the average numbers of content release in India on netflix.
+SELECT * 
+FROM netflix;
+
+SELECT
+    country,
+    release_year,
+    COUNT(show_id) AS total_release,
+    -- Calcul du pourcentage : (Compte par année / Compte total pour l'Inde) * 100
+    ROUND(
+        (CAST(COUNT(show_id) AS REAL) * 100) /
+        (SELECT CAST(COUNT(show_id) AS REAL) FROM netflix WHERE country = 'India'),
+        2
+    ) AS avg_release
+FROM
+    netflix
+WHERE
+    country = 'India'
+GROUP BY
+    country, release_year
+ORDER BY
+    avg_release DESC
+LIMIT 5;
+
+
+-- 11. List All Movies that are Documentaries
+SELECT * 
+FROM netflix;
+
+SELECT * 
+FROM netflix
+WHERE listed_in LIKE '%Documentaries';
+
+
+-- 12. Find All Content Without a Director
+SELECT * 
+FROM netflix;
+
+SELECT * 
+FROM netflix
+WHERE director IS NULL;
+
+
+-- 13. Find How Many Movies Actor 'Salman Khan' 
+-- Appeared in the Last 10 Years
+SELECT * 
+FROM netflix;
+
+SELECT
+    *
+FROM
+    netflix
+WHERE
+    -- 1. Search for 'Salman Khan' (LIKE is case-insensitive in SQLite by default for ASCII)
+    casts LIKE '%Salman Khan%'
+    AND
+    -- 2. Compare release_year with the current year minus 10
+    release_year > (CAST(STRFTIME('%Y', 'now') AS INTEGER) - 10);
+    
+
+-- 14. Find the Top 10 Actors Who Have Appeared in the Highest Number of Movies Produced in India
+SELECT
+*
+FROM
+netflix;
+
+WITH RECURSIVE SplitCasts(show_id, actor, rest) AS (
+  -- Étape 1 : initialisation
+  SELECT
+    show_id,
+    TRIM(SUBSTR(casts, 1, INSTR(casts || ',', ',') - 1)) AS actor,
+    SUBSTR(casts || ',', INSTR(casts || ',', ',') + 1) AS rest
+  FROM
+    netflix
+  WHERE
+    country = 'India'
+
+  UNION ALL
+
+  -- Étape 2 : récursion — découpe les acteurs suivants
+  SELECT
+    show_id,
+    TRIM(SUBSTR(rest, 1, INSTR(rest, ',') - 1)) AS actor,
+    SUBSTR(rest, INSTR(rest, ',') + 1)
+  FROM
+    SplitCasts
+  WHERE
+    rest <> ''
+    AND INSTR(rest, ',') > 0
+)
+SELECT
+  actor,
+  COUNT(*) AS appearances
+FROM
+  SplitCasts
+WHERE
+  actor <> ''
+GROUP BY
+  actor
+ORDER BY
+  appearances DESC
+LIMIT 10;
+
+-- 15. Categorize Content Based on the Presence of 'Kill' and 'Violence' Keywords
+SELECT 
+    category,
+    COUNT(*) AS content_count
+FROM (
+    SELECT 
+        CASE 
+            WHEN description LIKE '%kill%' OR description LIKE '%violence%' THEN 'Bad'
+            ELSE 'Good'
+        END AS category
+    FROM netflix
+) AS categorized_content
+GROUP BY category;
