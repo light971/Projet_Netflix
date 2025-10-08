@@ -1,6 +1,6 @@
 # Netflix Movies and TV Shows Data Analysis using SQL
 
-![](https://github.com/najirh/netflix_sql_project/blob/main/logo.png)
+![](https://github.com/light971/netflix_sql_project/blob/main/logo.png)
 
 ## Overview
 This project involves a comprehensive analysis of Netflix's movies and TV shows data using SQL. The goal is to extract valuable insights and answer various business questions based on the dataset. The following README provides a detailed account of the project's objectives, business problems, solutions, findings, and conclusions.
@@ -94,18 +94,46 @@ WHERE release_year = 2020;
 ### 4. Find the Top 5 Countries with the Most Content on Netflix
 
 ```sql
-SELECT * 
+WITH RECURSIVE
+  SplitCountry(title, rest) AS (
+    -- Initialiser la récursion en ajoutant une virgule à la fin pour traiter le dernier élément
+    SELECT
+      title,
+      country || ','
+    FROM
+      netflix
+    UNION ALL
+    -- Étape récursive : diviser la chaîne
+    SELECT
+      title,
+      SUBSTR(rest, INSTR(rest, ',') + 1)  -- Reste de la chaîne
+    FROM
+      SplitCountry
+    WHERE
+      INSTR(rest, ',') > 0 -- Continuer tant qu'il y a des virgules à traiter
+  ),
+  UnnestedCountries AS (
+    -- Extraire chaque pays de la colonne 'rest' qui a été réduite à une seule valeur
+    SELECT
+      TRIM(SUBSTR(rest, 1, INSTR(rest, ',') - 1)) AS country_name
+    FROM
+      SplitCountry
+    WHERE
+      INSTR(rest, ',') > 0 -- Sélectionner uniquement les parties valides avant le délimiteur
+  )
+-- Requête Finale (Simule le GROUP BY et le TOP 5 de votre requête originale)
+SELECT
+  country_name,
+  COUNT(*) AS total_content
 FROM
-(
-    SELECT 
-        UNNEST(STRING_TO_ARRAY(country, ',')) AS country,
-        COUNT(*) AS total_content
-    FROM netflix
-    GROUP BY 1
-) AS t1
-WHERE country IS NOT NULL
-ORDER BY total_content DESC
-LIMIT 5;
+  UnnestedCountries
+WHERE
+  country_name IS NOT NULL AND country_name != '' -- Filtrer les valeurs NULL ou vides
+GROUP BY
+  country_name
+ORDER BY
+  total_content DESC
+  LIMIT 5;
 ```
 
 **Objective:** Identify the top 5 countries with the highest number of content items.
@@ -113,11 +141,12 @@ LIMIT 5;
 ### 5. Identify the Longest Movie
 
 ```sql
-SELECT 
-    *
+SELECT type, duration
 FROM netflix
-WHERE type = 'Movie'
-ORDER BY SPLIT_PART(duration, ' ', 1)::INT DESC;
+WHERE type = 'Movie' 
+        AND 
+        duration = (SELECT MAX(duration) FROM netflix)
+GROUP BY 1;
 ```
 
 **Objective:** Find the movie with the longest duration.
@@ -127,7 +156,7 @@ ORDER BY SPLIT_PART(duration, ' ', 1)::INT DESC;
 ```sql
 SELECT *
 FROM netflix
-WHERE TO_DATE(date_added, 'Month DD, YYYY') >= CURRENT_DATE - INTERVAL '5 years';
+WHERE date_added >= DATE('now', '-5 year');
 ```
 
 **Objective:** Retrieve content added to Netflix in the last 5 years.
@@ -135,14 +164,34 @@ WHERE TO_DATE(date_added, 'Month DD, YYYY') >= CURRENT_DATE - INTERVAL '5 years'
 ### 7. Find All Movies/TV Shows by Director 'Rajiv Chilaka'
 
 ```sql
-SELECT *
-FROM (
-    SELECT 
-        *,
-        UNNEST(STRING_TO_ARRAY(director, ',')) AS director_name
-    FROM netflix
-) AS t
-WHERE director_name = 'Rajiv Chilaka';
+WITH RECURSIVE
+  SplitDirectors(show_id, director_name, rest) AS (
+    -- Initialisation : Prépare la chaîne pour le split
+    SELECT
+      show_id,
+      NULL, -- Placeholders pour le nom extrait (non utilisé ici)
+      TRIM(director) || ',' -- Assure une virgule et un nettoyage de base
+    FROM
+      netflix
+    UNION ALL
+    -- Récursion : Extrait le premier nom et passe le reste
+    SELECT
+      show_id,
+      TRIM(SUBSTR(rest, 1, INSTR(rest, ',') - 1)), -- Nom extrait
+      SUBSTR(rest, INSTR(rest, ',') + 1)  -- Reste de la chaîne
+    FROM
+      SplitDirectors
+    WHERE
+      INSTR(rest, ',') > 0
+  )
+SELECT
+  T1.* -- Sélectionne toutes les colonnes de la table netflix
+FROM
+  netflix AS T1
+JOIN
+  SplitDirectors AS T2 ON T1.show_id = T2.show_id
+WHERE
+  T2.director_name = 'Rajiv Chilaka'; -- Filtre sur le nom dénormalisé
 ```
 
 **Objective:** List all content directed by 'Rajiv Chilaka'.
@@ -150,10 +199,22 @@ WHERE director_name = 'Rajiv Chilaka';
 ### 8. List All TV Shows with More Than 5 Seasons
 
 ```sql
-SELECT *
-FROM netflix
-WHERE type = 'TV Show'
-  AND SPLIT_PART(duration, ' ', 1)::INT > 5;
+SELECT
+  *
+FROM
+  netflix
+WHERE
+  type = 'TV Show'
+  -- Extrait le nombre de saisons de la chaîne (ex: '7 Seasons')
+  AND CAST(
+      SUBSTR(
+          duration,
+          1,
+          INSTR(duration, ' ') - 1
+      )
+      AS INTEGER
+  ) > 5;
+
 ```
 
 **Objective:** Identify TV shows with more than 5 seasons.
@@ -161,11 +222,47 @@ WHERE type = 'TV Show'
 ### 9. Count the Number of Content Items in Each Genre
 
 ```sql
-SELECT 
-    UNNEST(STRING_TO_ARRAY(listed_in, ',')) AS genre,
-    COUNT(*) AS total_content
-FROM netflix
-GROUP BY 1;
+WITH RECURSIVE
+  SplitGenres(ID, rest) AS (
+    -- Étape 1 : Initialisation
+    SELECT
+      show_id, -- Utilisez un identifiant unique de la table
+      listed_in || ',' -- Ajouter un délimiteur final pour simplifier le traitement du dernier élément
+    FROM
+      netflix
+    UNION ALL
+    -- Étape 2 : Récursion
+    SELECT
+      ID,
+      SUBSTR(rest, INSTR(rest, ',') + 1)  -- Reste de la chaîne après le délimiteur
+    FROM
+      SplitGenres
+    WHERE
+      INSTR(rest, ',') > 0 -- Condition d'arrêt : continuer tant qu'il y a des virgules
+  ),
+  UnnestedGenres AS (
+    -- Étape 3 : Extraction des éléments individuels
+    SELECT
+      TRIM(
+        SUBSTR(rest, 1, INSTR(rest, ',') - 1)
+      ) AS genre_name
+    FROM
+      SplitGenres
+    WHERE
+      INSTR(rest, ',') > 0 -- Ne pas inclure les lignes vides
+  )
+-- Étape 4 : Agrégation (équivalent au GROUP BY de la requête originale)
+SELECT
+  genre_name AS genre,
+  COUNT(*) AS total_content
+FROM
+  UnnestedGenres
+WHERE
+  genre_name IS NOT NULL AND genre_name != '' -- Nettoyage final
+GROUP BY
+  genre_name
+ORDER BY
+  total_content DESC;
 ```
 
 **Objective:** Count the number of content items in each genre.
@@ -214,10 +311,17 @@ WHERE director IS NULL;
 ### 13. Find How Many Movies Actor 'Salman Khan' Appeared in the Last 10 Years
 
 ```sql
-SELECT * 
-FROM netflix
-WHERE casts LIKE '%Salman Khan%'
-  AND release_year > EXTRACT(YEAR FROM CURRENT_DATE) - 10;
+SELECT
+    *
+FROM
+    netflix
+WHERE
+    -- 1. Search for 'Salman Khan' (LIKE is case-insensitive in SQLite by default for ASCII)
+    casts LIKE '%Salman Khan%'
+    AND
+    -- 2. Compare release_year with the current year minus 10
+    release_year > (CAST(STRFTIME('%Y', 'now') AS INTEGER) - 10);
+    
 ```
 
 **Objective:** Count the number of movies featuring 'Salman Khan' in the last 10 years.
@@ -225,13 +329,41 @@ WHERE casts LIKE '%Salman Khan%'
 ### 14. Find the Top 10 Actors Who Have Appeared in the Highest Number of Movies Produced in India
 
 ```sql
-SELECT 
-    UNNEST(STRING_TO_ARRAY(casts, ',')) AS actor,
-    COUNT(*)
-FROM netflix
-WHERE country = 'India'
-GROUP BY actor
-ORDER BY COUNT(*) DESC
+WITH RECURSIVE SplitCasts(show_id, actor, rest) AS (
+  -- Étape 1 : initialisation
+  SELECT
+    show_id,
+    TRIM(SUBSTR(casts, 1, INSTR(casts || ',', ',') - 1)) AS actor,
+    SUBSTR(casts || ',', INSTR(casts || ',', ',') + 1) AS rest
+  FROM
+    netflix
+  WHERE
+    country = 'India'
+
+  UNION ALL
+
+  -- Étape 2 : récursion — découpe les acteurs suivants
+  SELECT
+    show_id,
+    TRIM(SUBSTR(rest, 1, INSTR(rest, ',') - 1)) AS actor,
+    SUBSTR(rest, INSTR(rest, ',') + 1)
+  FROM
+    SplitCasts
+  WHERE
+    rest <> ''
+    AND INSTR(rest, ',') > 0
+)
+SELECT
+  actor,
+  COUNT(*) AS appearances
+FROM
+  SplitCasts
+WHERE
+  actor <> ''
+GROUP BY
+  actor
+ORDER BY
+  appearances DESC
 LIMIT 10;
 ```
 
@@ -246,12 +378,13 @@ SELECT
 FROM (
     SELECT 
         CASE 
-            WHEN description ILIKE '%kill%' OR description ILIKE '%violence%' THEN 'Bad'
+            WHEN description LIKE '%kill%' OR description LIKE '%violence%' THEN 'Bad'
             ELSE 'Good'
         END AS category
     FROM netflix
 ) AS categorized_content
 GROUP BY category;
+
 ```
 
 **Objective:** Categorize content as 'Bad' if it contains 'kill' or 'violence' and 'Good' otherwise. Count the number of items in each category.
@@ -264,20 +397,3 @@ GROUP BY category;
 - **Content Categorization:** Categorizing content based on specific keywords helps in understanding the nature of content available on Netflix.
 
 This analysis provides a comprehensive view of Netflix's content and can help inform content strategy and decision-making.
-
-
-
-## Author - Zero Analyst
-
-This project is part of my portfolio, showcasing the SQL skills essential for data analyst roles. If you have any questions, feedback, or would like to collaborate, feel free to get in touch!
-
-### Stay Updated and Join the Community
-
-For more content on SQL, data analysis, and other data-related topics, make sure to follow me on social media and join our community:
-
-- **YouTube**: [Subscribe to my channel for tutorials and insights](https://www.youtube.com/@zero_analyst)
-- **Instagram**: [Follow me for daily tips and updates](https://www.instagram.com/zero_analyst/)
-- **LinkedIn**: [Connect with me professionally](https://www.linkedin.com/in/najirr)
-- **Discord**: [Join our community to learn and grow together](https://discord.gg/36h5f2Z5PK)
-
-Thank you for your support, and I look forward to connecting with you!
